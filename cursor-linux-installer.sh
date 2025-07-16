@@ -36,11 +36,42 @@ check_fuse() {
     fi
 }
 
+is_apparmor_enabled() {
+    command -v aa-status >/dev/null 2>&1 && sudo aa-status --enabled 2>/dev/null
+}
+
+install_apparmor_profile() {
+    if is_apparmor_enabled; then
+        print_status "AppArmor detected. Installing Cursor AppArmor profile..."
+        sudo tee /etc/apparmor.d/cursor > /dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile cursor /usr/local/bin/cursor flags=(unconfined) {
+    userns,
+    include if exists <local/cursor>
+}
+EOF
+        sudo apparmor_parser -r /etc/apparmor.d/cursor
+        print_success "AppArmor profile for Cursor installed and loaded."
+    fi
+}
+
+remove_apparmor_profile() {
+    if is_apparmor_enabled && [ -f /etc/apparmor.d/cursor ]; then
+        print_status "Removing Cursor AppArmor profile..."
+        sudo apparmor_parser -R /etc/apparmor.d/cursor
+        sudo rm -f /etc/apparmor.d/cursor
+        print_success "AppArmor profile for Cursor removed."
+    fi
+}
+
 uninstall_cursor() {
     print_status "Removing Cursor files and desktop entry..."
     sudo rm -rf /opt/cursor
     sudo rm -f /usr/local/bin/cursor
     sudo rm -f /usr/share/applications/cursor.desktop
+    remove_apparmor_profile
     print_success "Cursor has been uninstalled."
     exit 0
 }
@@ -105,6 +136,8 @@ update_cursor() {
 
     VERSION=$(echo "$DOWNLOAD_URL" | grep -o 'Cursor-[0-9.]*-x86_64' | cut -d'-' -f2)
     echo "$VERSION" | sudo tee /opt/cursor/version.txt > /dev/null
+
+    install_apparmor_profile
 
     print_success "Cursor has been updated to version $VERSION!"
     print_status "Your settings, themes, and extensions are preserved."
@@ -200,6 +233,8 @@ EOL
 
     VERSION=$(echo "$DOWNLOAD_URL" | grep -o 'Cursor-[0-9.]*-x86_64' | cut -d'-' -f2)
     echo "$VERSION" | sudo tee /opt/cursor/version.txt > /dev/null
+
+    install_apparmor_profile
 
     echo -e "\n${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║${NC}              ${GREEN}Installation Complete!${NC}                      ${GREEN}║${NC}"
